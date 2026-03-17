@@ -41,3 +41,8 @@ app-example
 # generated native folders
 /ios
 /android
+
+# AI Assistant & IDE Configs
+.agent/
+.agents/
+skills-lock.json

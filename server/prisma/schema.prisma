@@ -1,0 +1,43 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            Int           @id @default(autoincrement())
+  studentId     String        @unique
+  passwordHash  String
+  role          String        @default("student") // student, admin
+  pin           String?       // Recovery PIN for password reset
+  transactions  Transaction[]
+  createdAt     DateTime      @default(now())
+}
+
+model Asset {
+  id            Int           @id @default(autoincrement())
+  name          String
+  serialNumber  String        @unique
+  category      String
+  status        String        @default("available") // available, borrowed, maintenance
+  imagePath     String?       // Changed from imageUrl to imagePath to match prompt
+  description   String?       // <--- ADDED: Description field
+  transactions  Transaction[]
+  createdAt     DateTime      @default(now())
+}
+
+model Transaction {
+  id          Int       @id @default(autoincrement())
+  userId      Int
+  assetId     Int
+  user        User      @relation(fields: [userId], references: [id])
+  asset       Asset     @relation(fields: [assetId], references: [id])
+  borrowDate  DateTime  @default(now())
+  returnDate  DateTime? // Actual return date
+  dueDate     DateTime? // Expected return date
+  status      String    @default("pending") // pending, approved, returned, rejected
+  reason      String?   // Reason for borrowing
+}

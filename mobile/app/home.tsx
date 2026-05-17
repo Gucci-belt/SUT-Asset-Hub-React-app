@@ -43,7 +43,7 @@ const CATS = [
 ];
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
-const Header = () => {
+const Header = ({ searchQuery, setSearchQuery }: { searchQuery: string; setSearchQuery: (q: string) => void }) => {
   const router = useRouter();
   const [displayName, setDisplayName] = useState('');
   const [badgeCount, setBadgeCount] = useState(0);
@@ -110,6 +110,8 @@ const Header = () => {
           placeholder="Search equipment..."
           placeholderTextColor="#94A3B8"
           className="flex-1 ml-3 text-slate-800 text-[15px] font-medium"
+          value={searchQuery}
+          onChangeText={setSearchQuery}
         />
       </View>
     </View>
@@ -123,6 +125,7 @@ export default function HomeScreen() {
   const [assets, setAssets]                   = useState<Asset[]>([]);
   const [filtered, setFiltered]               = useState<Asset[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery]         = useState('');
   const [refreshing, setRefreshing]           = useState(false);
 
   // ── Fetch ────────────────────────────────────────────────────────────────
@@ -135,20 +138,11 @@ export default function HomeScreen() {
       if (res.ok) {
         const data: Asset[] = await res.json();
         setAssets(data);
-        // Reapply existing category filter on refresh
-        setFiltered((prev) => {
-          if (selectedCategory) {
-            return data.filter(
-              (a) => a.category.toLowerCase() === selectedCategory.toLowerCase()
-            );
-          }
-          return data;
-        });
       }
     } catch (err) {
       console.error('fetchAssets error:', err);
     }
-  }, [selectedCategory]);
+  }, []);
 
   useEffect(() => {
     fetchAssets();
@@ -160,14 +154,32 @@ export default function HomeScreen() {
     setRefreshing(false);
   };
 
+  // ── Reactive Filtering logic for Search & Category ───────────────────────
+  useEffect(() => {
+    let result = assets;
+    if (selectedCategory) {
+      result = result.filter(
+        (a) => a.category.toLowerCase() === selectedCategory.toLowerCase()
+      );
+    }
+    if (searchQuery.trim() !== '') {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(
+        (a) =>
+          a.name.toLowerCase().includes(q) ||
+          a.serialNumber.toLowerCase().includes(q) ||
+          (a.description && a.description.toLowerCase().includes(q))
+      );
+    }
+    setFiltered(result);
+  }, [assets, selectedCategory, searchQuery]);
+
   // ── Category filter ───────────────────────────────────────────────────────
   const onCategoryPress = (catName: string) => {
     if (selectedCategory === catName) {
       setSelectedCategory(null);
-      setFiltered(assets);
     } else {
       setSelectedCategory(catName);
-      setFiltered(assets.filter((a) => a.category.toLowerCase() === catName.toLowerCase()));
     }
   };
 
@@ -187,44 +199,46 @@ export default function HomeScreen() {
         }
       >
         {/* ── Header ── */}
-        <Header />
+        <Header searchQuery={searchQuery} setSearchQuery={setSearchQuery} />
 
-        {/* ── Categories ── */}
-        <View className="px-6 mt-8">
-          <Text className="text-slate-800 text-[17px] font-bold mb-5 tracking-tight">Categories</Text>
-          <View className="flex-row flex-wrap">
-            {CATS.map((cat) => {
-              const isActive = selectedCategory === cat.name;
-              return (
-                <TouchableOpacity
-                  key={cat.name}
-                  style={{ width: '30%', marginRight: '3%', marginBottom: 20 }}
-                  className="items-center bg-white rounded-2xl py-4"
-                  onPress={() => router.push(`/category?name=${encodeURIComponent(cat.name)}`)}
-                  activeOpacity={0.7}
-                >
-                  <View
-                    className={`w-14 h-14 rounded-full items-center justify-center mb-2 ${
-                      isActive ? 'bg-[#2563EB]' : 'bg-[#EFF6FF]'
-                    }`}
+        {/* ── Categories (hidden when searching) ── */}
+        {!searchQuery && (
+          <View className="px-6 mt-8">
+            <Text className="text-slate-800 text-[17px] font-bold mb-5 tracking-tight">Categories</Text>
+            <View className="flex-row flex-wrap">
+              {CATS.map((cat) => {
+                const isActive = selectedCategory === cat.name;
+                return (
+                  <TouchableOpacity
+                    key={cat.name}
+                    style={{ width: '30%', marginRight: '3%', marginBottom: 20 }}
+                    className="items-center bg-white rounded-2xl py-4"
+                    onPress={() => router.push(`/category?name=${encodeURIComponent(cat.name)}`)}
+                    activeOpacity={0.7}
                   >
-                    <cat.icon color={isActive ? '#FFFFFF' : '#2563EB'} size={24} />
-                  </View>
-                  <Text
-                    className={`text-[11px] font-bold text-center ${
-                      isActive ? 'text-[#2563EB]' : 'text-slate-500'
-                    }`}
-                  >
-                    {cat.name}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
+                    <View
+                      className={`w-14 h-14 rounded-full items-center justify-center mb-2 ${
+                        isActive ? 'bg-[#2563EB]' : 'bg-[#EFF6FF]'
+                      }`}
+                    >
+                      <cat.icon color={isActive ? '#FFFFFF' : '#2563EB'} size={24} />
+                    </View>
+                    <Text
+                      className={`text-[11px] font-bold text-center ${
+                        isActive ? 'text-[#2563EB]' : 'text-slate-500'
+                      }`}
+                    >
+                      {cat.name}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           </View>
-        </View>
+        )}
 
-        {/* ── New Arrivals (shown only when no category filter) ── */}
-        {!selectedCategory && (
+        {/* ── New Arrivals (shown only when no category filter and not searching) ── */}
+        {!selectedCategory && !searchQuery && (
           <View className="mt-2">
             <View className="flex-row justify-between items-end px-6 mb-4">
               <Text className="text-slate-800 text-[17px] font-bold tracking-tight">

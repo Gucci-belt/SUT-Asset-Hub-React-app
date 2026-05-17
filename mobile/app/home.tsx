@@ -1,304 +1,374 @@
-import React, { useState } from 'react';
-import { View, Text, ScrollView, TextInput, Image, StatusBar, Pressable, PressableProps } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View, Text, ScrollView, TextInput, TouchableOpacity,
+  StatusBar, RefreshControl, FlatList, Image, ImageBackground,
+} from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import { useRouter } from 'expo-router';
-import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
-import { MotiView } from 'moti';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import Constants from 'expo-constants';
+import {
+  Bell, Search, Router as RouterIcon, Laptop, Camera, Radio,
+  Microscope, Headphones,
+} from 'lucide-react-native';
+import BottomTabBar from '../components/BottomTabBar';
 
-// ------------------------------------------------------------------
-// Micro-Interaction Components
-// ------------------------------------------------------------------
-
-interface ScaleButtonProps extends PressableProps {
-  className?: string;
-  style?: any;
-  children: React.ReactNode;
+// ─── API ──────────────────────────────────────────────────────────────────────
+const debuggerHost = Constants.expoConfig?.hostUri;
+let API_BASE_URL = 'http://10.0.2.2:3000/api';
+if (debuggerHost) {
+  API_BASE_URL = `http://${debuggerHost.split(':')[0]}:3000/api`;
 }
 
-function ScaleButton({ children, className, onPress, ...props }: ScaleButtonProps) {
-  const scale = useSharedValue(1);
-  const style = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
-  
+// ─── Types ────────────────────────────────────────────────────────────────────
+interface Asset {
+  id: number;
+  name: string;
+  serialNumber: string;
+  category: string;
+  status: string;
+  description: string | null;
+  imagePath: string | null;
+  createdAt: string;
+}
+
+// ─── Category config ──────────────────────────────────────────────────────────
+const CATS = [
+  { name: 'IoT',      icon: RouterIcon },
+  { name: 'Laptops',  icon: Laptop },
+  { name: 'Cameras',  icon: Camera },
+  { name: 'Sensors',  icon: Radio },
+  { name: 'Network',  icon: Microscope },
+  { name: 'Audio',    icon: Headphones },
+];
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
+const Header = () => {
+  const router = useRouter();
+  const [displayName, setDisplayName] = useState('');
+  const [badgeCount, setBadgeCount] = useState(0);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const firstName = await AsyncStorage.getItem('firstName');
+        const studentId = await AsyncStorage.getItem('studentId');
+        setDisplayName(firstName || studentId || 'User');
+      } catch {
+        setDisplayName('User');
+      }
+    };
+    load();
+  }, []);
+
+  useEffect(() => {
+    const fetchNotifications = async () => {
+      try {
+        const token = await SecureStore.getItemAsync('token');
+        if (!token) return;
+        const res = await fetch(`${API_BASE_URL}/transactions/my-history`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const count = data.filter((t: any) =>
+          t.status === 'pending' || t.status === 'approved'
+        ).length;
+        setBadgeCount(count);
+      } catch {}
+    };
+
+    fetchNotifications();
+    const interval = setInterval(fetchNotifications, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
   return (
-    <Pressable
-      onPressIn={() => { scale.value = withSpring(0.95, { damping: 15, stiffness: 300 }); }}
-      onPressOut={() => { scale.value = withSpring(1, { damping: 15, stiffness: 300 }); }}
-      onPress={onPress}
-      {...props}
-    >
-      <Animated.View style={style} className={className}>
-         {children}
-      </Animated.View>
-    </Pressable>
+    <View className="bg-[#2563EB] pt-8 pb-8 px-6 rounded-b-[40px] shadow-lg">
+      <View className="flex-row justify-between items-center mb-6">
+        <View>
+          <Text className="text-blue-100 font-medium text-[13px] mb-1">Welcome back,</Text>
+          <Text className="text-white text-2xl font-bold tracking-wide">{`Hello, ${displayName}`}</Text>
+        </View>
+        <TouchableOpacity
+          className="w-10 h-10 bg-white/20 rounded-full items-center justify-center relative"
+          onPress={() => router.push('/history')}
+        >
+          <Bell color="white" size={20} />
+          {badgeCount > 0 && (
+            <View className="absolute -top-1 -right-1 bg-red-500 rounded-full min-w-[18px] h-[18px] items-center justify-center px-1 border-2 border-[#2563EB]">
+              <Text className="text-white text-[10px] font-bold">
+                {badgeCount > 9 ? '9+' : badgeCount}
+              </Text>
+            </View>
+          )}
+        </TouchableOpacity>
+      </View>
+      <View className="bg-white flex-row items-center rounded-full px-5 py-3.5 shadow-lg shadow-blue-900/20">
+        <Search color="#94A3B8" size={20} />
+        <TextInput
+          placeholder="Search equipment..."
+          placeholderTextColor="#94A3B8"
+          className="flex-1 ml-3 text-slate-800 text-[15px] font-medium"
+        />
+      </View>
+    </View>
   );
-}
+};
 
-// ------------------------------------------------------------------
-// Dummy Data
-// ------------------------------------------------------------------
-
-const CATEGORIES = [
-  { id: '1', name: 'IoT', icon: <Feather name="radio" size={24} color="#3b82f6" /> },
-  { id: '2', name: 'Laptops', icon: <Feather name="monitor" size={24} color="#3b82f6" /> },
-  { id: '3', name: 'Cameras', icon: <Feather name="camera" size={24} color="#3b82f6" /> },
-  { id: '4', name: 'Sensors', icon: <MaterialCommunityIcons name="leak" size={24} color="#3b82f6" /> },
-  { id: '5', name: 'Lab Gear', icon: <MaterialCommunityIcons name="microscope" size={24} color="#3b82f6" /> },
-  { id: '6', name: 'Tablets', icon: <Feather name="smartphone" size={24} color="#3b82f6" /> },
-  { id: '7', name: 'Audio', icon: <Feather name="headphones" size={24} color="#3b82f6" /> },
-  { id: '8', name: 'Drones', icon: <MaterialCommunityIcons name="quadcopter" size={24} color="#3b82f6" /> }
-];
-
-const NEW_ARRIVALS = [
-  { id: '1', title: 'Sony Alpha IV\nCinema Kit', subtitle: 'Lab 402 • Available', bg: 'bg-blue-600', tag: 'NEW' },
-  { id: '2', title: 'DJI Matrice 300\nRTK Drone', subtitle: 'Hangar 1 • Limited', bg: 'bg-indigo-800', tag: 'LIMITED' }
-];
-
-// ------------------------------------------------------------------
-// Main Screen
-// ------------------------------------------------------------------
-
+// ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function HomeScreen() {
   const router = useRouter();
 
+  const [assets, setAssets]                   = useState<Asset[]>([]);
+  const [filtered, setFiltered]               = useState<Asset[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [refreshing, setRefreshing]           = useState(false);
+
+  // ── Fetch ────────────────────────────────────────────────────────────────
+  const fetchAssets = useCallback(async () => {
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      const res = await fetch(`${API_BASE_URL}/assets`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.ok) {
+        const data: Asset[] = await res.json();
+        setAssets(data);
+        // Reapply existing category filter on refresh
+        setFiltered((prev) => {
+          if (selectedCategory) {
+            return data.filter(
+              (a) => a.category.toLowerCase() === selectedCategory.toLowerCase()
+            );
+          }
+          return data;
+        });
+      }
+    } catch (err) {
+      console.error('fetchAssets error:', err);
+    }
+  }, [selectedCategory]);
+
+  useEffect(() => {
+    fetchAssets();
+  }, []);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchAssets();
+    setRefreshing(false);
+  };
+
+  // ── Category filter ───────────────────────────────────────────────────────
+  const onCategoryPress = (catName: string) => {
+    if (selectedCategory === catName) {
+      setSelectedCategory(null);
+      setFiltered(assets);
+    } else {
+      setSelectedCategory(catName);
+      setFiltered(assets.filter((a) => a.category.toLowerCase() === catName.toLowerCase()));
+    }
+  };
+
+  // ── New Arrivals (horizontal strip — first 4) ─────────────────────────────
+  const newArrivals = assets.slice(0, 4);
+
   return (
-    <View className="flex-1 bg-blue-600">
-      <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
-      
-      <SafeAreaView className="flex-1 bg-white" edges={['top']}>
-        <ScrollView 
-          className="flex-1 bg-white" 
-          showsVerticalScrollIndicator={false} 
-          contentContainerStyle={{ paddingBottom: 140 }}
-          bounces={false}
-        >
-          
-          {/* Blue Header Section that scrolls with content */}
-          <MotiView 
-            from={{ opacity: 0, translateY: -20 }}
-            animate={{ opacity: 1, translateY: 0 }}
-            transition={{ type: 'spring', delay: 100 }}
-            className="bg-blue-600 pt-2 pb-14 px-6 rounded-b-[40px]"
-          >
-            {/* Header Top Row */}
-            <View className="flex-row justify-between items-center mb-6">
-              <View>
-                <Text className="text-blue-100 font-medium text-sm mb-0.5">Welcome back,</Text>
-                <Text className="text-white text-2xl font-bold tracking-wide">Hello, Nick</Text>
-              </View>
-              <View className="flex-row items-center">
-                {/* Admin Button (Temporary for easy access) */}
-                <ScaleButton onPress={() => router.push('/admin')} className="w-10 h-10 bg-white/20 rounded-full items-center justify-center mr-3">
-                  <Feather name="shield" size={18} color="white" />
-                </ScaleButton>
+    <View className="flex-1 bg-white pt-12">
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
 
-                {/* Notification Bell */}
-                <ScaleButton className="w-10 h-10 bg-white/20 rounded-full items-center justify-center mr-3 relative">
-                  <Feather name="bell" size={20} color="white" />
-                  <View className="absolute top-2 right-2.5 w-2 h-2 bg-red-500 rounded-full" />
-                </ScaleButton>
+      <ScrollView
+        className="flex-1"
+        showsVerticalScrollIndicator={false}
+        bounces
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#2563EB" />
+        }
+      >
+        {/* ── Header ── */}
+        <Header />
 
-                {/* Profile Avatar */}
-                <ScaleButton onPress={() => router.push('/profile')}>
-                  <View className="w-11 h-11 bg-orange-400 rounded-full border-2 border-orange-200 items-center justify-center shadow-lg">
-                     <Text className="text-black font-bold text-lg">N</Text>
+        {/* ── Categories ── */}
+        <View className="px-6 mt-8">
+          <Text className="text-slate-800 text-[17px] font-bold mb-5 tracking-tight">Categories</Text>
+          <View className="flex-row flex-wrap">
+            {CATS.map((cat) => {
+              const isActive = selectedCategory === cat.name;
+              return (
+                <TouchableOpacity
+                  key={cat.name}
+                  style={{ width: '30%', marginRight: '3%', marginBottom: 20 }}
+                  className="items-center bg-white rounded-2xl py-4"
+                  onPress={() => router.push(`/category?name=${encodeURIComponent(cat.name)}`)}
+                  activeOpacity={0.7}
+                >
+                  <View
+                    className={`w-14 h-14 rounded-full items-center justify-center mb-2 ${
+                      isActive ? 'bg-[#2563EB]' : 'bg-[#EFF6FF]'
+                    }`}
+                  >
+                    <cat.icon color={isActive ? '#FFFFFF' : '#2563EB'} size={24} />
                   </View>
-                </ScaleButton>
-              </View>
-            </View>
-
-            {/* Search Bar inside Header */}
-            <View>
-              <ScaleButton className="flex-row items-center bg-white rounded-[24px] px-5 py-4 shadow-xl shadow-blue-900/20">
-                <Feather name="search" size={20} color="#94a3b8" className="mr-3" />
-                <TextInput
-                  placeholder="Search equipment..."
-                  placeholderTextColor="#94a3b8"
-                  className="flex-1 ml-3 text-slate-800 font-medium text-base"
-                />
-              </ScaleButton>
-            </View>
-          </MotiView>
-
-          {/* Active Borrowings Card (Pulled up to overlap the curve) */}
-          <MotiView 
-            from={{ opacity: 0, translateY: 20 }}
-            animate={{ opacity: 1, translateY: 0 }}
-            transition={{ type: 'spring', delay: 300 }}
-            className="px-6 mb-8 -mt-6"
-          >
-            <ScaleButton className="bg-white rounded-[28px] p-5 shadow-[0_8px_30px_rgb(0,0,0,0.06)] border border-slate-50">
-              
-              <View className="flex-row justify-between items-center mb-4">
-                <Text className="text-slate-400 font-bold text-xs tracking-widest uppercase">Active Borrowings</Text>
-                <View className="bg-red-50 px-2.5 py-1 rounded-md">
-                  <Text className="text-red-500 font-bold text-[10px] uppercase">Urgent</Text>
-                </View>
-              </View>
-
-              <View className="flex-row items-center justify-between mb-5">
-                <View>
-                  <Text className="text-slate-800 font-bold text-lg mb-0.5">MacBook Pro 14"</Text>
-                  <Text className="text-slate-500 text-xs">Due Tomorrow, 10:00 AM</Text>
-                </View>
-                <View className="w-12 h-12 bg-slate-50 rounded-full items-center justify-center border border-slate-100">
-                  <Feather name="monitor" size={20} color="#3b82f6" />
-                </View>
-              </View>
-
-              {/* Progress Bar + Footer */}
-              <View>
-                <View className="w-full h-1.5 bg-slate-100 rounded-full mb-2 overflow-hidden">
-                  <MotiView 
-                    from={{ width: '0%' }}
-                    animate={{ width: '80%' }}
-                    transition={{ type: 'timing', duration: 1000, delay: 500 }}
-                    className="h-full bg-orange-500 rounded-full" 
-                  />
-                </View>
-                <Text className="text-right text-red-500 font-semibold text-[10px]">Return in 18 hours</Text>
-              </View>
-            </ScaleButton>
-          </MotiView>
-
-          {/* Categories Grid */}
-          <View className="px-6 mb-8">
-            <MotiView 
-              from={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 400 }}
-              className="flex-row justify-between items-end mb-5"
-            >
-              <Text className="text-slate-900 text-xl font-bold">Categories</Text>
-              <ScaleButton>
-                <Text className="text-blue-600 font-bold text-sm">See All</Text>
-              </ScaleButton>
-            </MotiView>
-            
-            <View className="flex-row flex-wrap justify-between">
-              {CATEGORIES.map((cat, index) => (
-                <MotiView
-                  key={cat.id} 
-                  from={{ opacity: 0, translateX: 50 }}
-                  animate={{ opacity: 1, translateX: 0 }}
-                  transition={{ type: 'spring', delay: 500 + index * 50 }}
-                  style={{ width: '25%' }}
-                  className="items-center mb-6"
-                >
-                  <ScaleButton className="items-center mb-6 w-full">
-                    <View className="w-[60px] h-[60px] bg-slate-50 rounded-full items-center justify-center mb-2">
-                      {cat.icon}
-                    </View>
-                    <Text className="text-slate-500 text-xs font-medium text-center">{cat.name}</Text>
-                  </ScaleButton>
-                </MotiView>
-              ))}
-            </View>
+                  <Text
+                    className={`text-[11px] font-bold text-center ${
+                      isActive ? 'text-[#2563EB]' : 'text-slate-500'
+                    }`}
+                  >
+                    {cat.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
+        </View>
 
-          {/* New Arrivals */}
-          <View className="mb-8">
-            <MotiView 
-              from={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 600 }}
-              className="flex-row justify-between items-end px-6 mb-5"
-            >
-              <Text className="text-slate-900 text-xl font-bold">New Arrivals</Text>
-              <ScaleButton>
-                <Text className="text-blue-600 font-bold text-sm">View New</Text>
-              </ScaleButton>
-            </MotiView>
-
+        {/* ── New Arrivals (shown only when no category filter) ── */}
+        {!selectedCategory && (
+          <View className="mt-2">
+            <View className="flex-row justify-between items-end px-6 mb-4">
+              <Text className="text-slate-800 text-[17px] font-bold tracking-tight">
+                New Equipment Arrivals
+              </Text>
+            </View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} className="pl-6">
-              {NEW_ARRIVALS.map((item, index) => (
-                <MotiView 
-                  key={item.id} 
-                  from={{ opacity: 0, translateX: 100 }}
-                  animate={{ opacity: 1, translateX: 0 }}
-                  transition={{ type: 'spring', delay: 700 + index * 150 }}
-                  className={`${item.bg} w-[260px] h-[300px] rounded-[32px] p-6 mr-4 relative justify-end overflow-hidden shadow-lg shadow-blue-900/20`}
-                >
-                  <ScaleButton className="flex-1 w-full h-full relative p-0 absolute inset-0 z-0 border-0 m-0">
-                    <View className="w-full h-full p-6 pb-6 relative flex-col justify-end">
-                      {/* Decorative placeholder */}
-                      <View className="absolute inset-0 items-center justify-center mt-[-40px]">
-                         <MaterialCommunityIcons name="camera-outline" size={140} color="rgba(255,255,255,0.15)" />
-                      </View>
-
-                      {/* Absolute Tag */}
-                      <View className="absolute top-6 left-6" style={{ zIndex: 10 }}>
-                         <View className="bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-full shadow-sm">
-                            <Text className="text-blue-600 text-[10px] font-bold tracking-widest">{item.tag}</Text>
-                         </View>
-                      </View>
-
-                      {/* Content Over Gradient */}
-                      <View className="mt-auto">
-                        <Text className="text-white font-bold text-2xl mb-2 leading-tight">{item.title}</Text>
-                        <Text className="text-white/80 text-xs">{item.subtitle}</Text>
-                      </View>
-                    </View>
-                  </ScaleButton>
-                </MotiView>
-              ))}
-              <View className="pr-6" /> {/* Spacer */}
+              {newArrivals.length > 0 ? (
+                newArrivals.map((asset, index) => {
+                  const isBlue = index % 2 === 1;
+                  const bgClass    = isBlue ? 'bg-[#60A5FA]' : 'bg-[#10B981]';
+                  const shadowClass = isBlue ? 'shadow-blue-900/20' : 'shadow-emerald-900/20';
+                  const textClass  = isBlue ? 'text-blue-100' : 'text-emerald-100';
+                  return (
+                    <TouchableOpacity
+                      key={asset.id}
+                      onPress={() => router.push(`/detail?id=${asset.id}`)}
+                      className={`w-[280px] h-[160px] ${bgClass} rounded-[24px] p-5 mr-4 justify-between overflow-hidden relative shadow-md ${shadowClass}`}
+                    >
+                      <ImageBackground
+                        source={
+                          asset.imagePath
+                            ? {
+                                uri: asset.imagePath.startsWith('http')
+                                  ? asset.imagePath
+                                  : `${API_BASE_URL.replace('/api', '')}${asset.imagePath}`,
+                              }
+                            : undefined
+                        }
+                        className="w-full h-full rounded-[24px] overflow-hidden justify-between p-5"
+                        imageStyle={{ borderRadius: 24, opacity: 0.35 }}
+                      >
+                        <View className="bg-white/30 self-start px-3 py-1 rounded-full mb-2">
+                          <Text className="text-white text-[9px] font-bold tracking-widest">NEW</Text>
+                        </View>
+                        <View className="z-10 mt-2">
+                          <Text className="text-white font-bold text-[22px] leading-tight" numberOfLines={2}>
+                            {asset.name}
+                          </Text>
+                        </View>
+                        <Text className="text-white/80 text-[11px] mt-auto z-10 font-medium" numberOfLines={1}>
+                          {asset.description || 'New equipment arrival'}
+                        </Text>
+                      </ImageBackground>
+                    </TouchableOpacity>
+                  );
+                })
+              ) : (
+                <View className="w-[280px] h-[160px] bg-slate-100 rounded-[24px] items-center justify-center mr-4">
+                  <Text className="text-slate-400 font-medium">No new arrivals</Text>
+                </View>
+              )}
             </ScrollView>
           </View>
+        )}
 
-        </ScrollView>
-      </SafeAreaView>
+        {/* ── Filtered Asset List ── */}
+        <View className="px-6 mt-6 mb-4">
+          <Text className="text-slate-800 text-[17px] font-bold tracking-tight mb-4">
+            {selectedCategory
+              ? `${selectedCategory} (${filtered.length})`
+              : `All Assets (${assets.length})`}
+          </Text>
 
-      {/* Massive Floating Scan Button (FAB) */}
-      <View className="absolute bottom-[55px] self-center z-50 shadow-2xl shadow-blue-600/50">
-        <ScaleButton 
-          className="w-[90px] h-[90px] bg-blue-600 rounded-full items-center justify-center border-4 border-white"
-          onPress={() => router.push('/scanner')}
-        >
-          <MaterialCommunityIcons name="qrcode-scan" size={32} color="white" />
-        </ScaleButton>
-      </View>
+          {filtered.length === 0 ? (
+            <View className="items-center py-10">
+              <Text className="text-slate-400 text-sm font-medium">
+                {selectedCategory ? `No assets in "${selectedCategory}"` : 'No assets available'}
+              </Text>
+            </View>
+          ) : (
+            <FlatList
+              data={filtered}
+              keyExtractor={(item) => item.id.toString()}
+              scrollEnabled={false}
+              ItemSeparatorComponent={() => <View className="h-3" />}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  onPress={() => router.push(`/detail?id=${item.id}`)}
+                  className="bg-white rounded-2xl p-4 flex-row items-center"
+                  style={{
+                    shadowColor: '#94A3B8',
+                    shadowOpacity: 0.1,
+                    shadowRadius: 8,
+                    elevation: 2,
+                  }}
+                  activeOpacity={0.7}
+                >
+                  {/* Color-coded category strip */}
+                  {item.imagePath ? (
+                    <Image
+                      source={{ uri: item.imagePath?.startsWith('http') 
+                        ? item.imagePath 
+                        : `${API_BASE_URL.replace('/api', '')}${item.imagePath}` 
+                      }}
+                      style={{ width: 48, height: 48, borderRadius: 12, marginRight: 16 }}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View
+                      className="w-12 h-12 rounded-xl items-center justify-center mr-4"
+                      style={{ backgroundColor: '#EFF6FF' }}
+                    >
+                      <Text
+                        className="text-[#2563EB] text-xs font-bold text-center"
+                        numberOfLines={1}
+                      >
+                        {item.category.slice(0, 3).toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
 
-      {/* Modern Bottom Navigation */}
-      <MotiView 
-        from={{ opacity: 0, translateY: 50 }}
-        animate={{ opacity: 1, translateY: 0 }}
-        transition={{ type: 'spring', delay: 800 }}
-        className="absolute bottom-0 w-full bg-white flex-row justify-between px-2 pt-3 pb-8 border-t-[0.5px] border-slate-200" 
-        style={{ zIndex: 40 }}
-      >
-        <ScaleButton className="items-center flex-1">
-          <View className="w-10 h-10 bg-blue-600 rounded-lg items-center justify-center mb-1">
-             <Feather name="home" size={20} color="white" />
-          </View>
-          <Text className="text-blue-600 text-[10px] font-bold">HOME</Text>
-        </ScaleButton>
-        
-        <ScaleButton className="items-center flex-1 mt-1 opacity-50">
-          <View className="mb-1 mt-1">
-            <Feather name="search" size={22} color="#475569" />
-          </View>
-          <Text className="text-slate-600 text-[10px] font-bold mt-1">SEARCH</Text>
-        </ScaleButton>
-        
-        {/* Spacer for FAB */}
-        <View className="flex-1" />
-        
-        <ScaleButton className="items-center flex-1 mt-1 opacity-50">
-          <View className="mb-1 mt-1">
-            <Feather name="clock" size={22} color="#475569" />
-          </View>
-          <Text className="text-slate-600 text-[10px] font-bold mt-1">HISTORY</Text>
-        </ScaleButton>
-        
-        <ScaleButton className="items-center flex-1 mt-1 opacity-50" onPress={() => router.push('/profile')}>
-          <View className="mb-1 mt-1">
-            <Feather name="user" size={22} color="#475569" />
-          </View>
-          <Text className="text-slate-600 text-[10px] font-bold mt-1">PROFILE</Text>
-        </ScaleButton>
-      </MotiView>
+                  {/* Info */}
+                  <View className="flex-1">
+                    <Text className="text-slate-900 text-sm font-bold mb-0.5" numberOfLines={1}>
+                      {item.name}
+                    </Text>
+                    <Text className="text-slate-400 text-xs font-medium">
+                      {item.serialNumber}
+                    </Text>
+                  </View>
 
+                  {/* Status badge */}
+                  <View
+                    className={`px-2 py-1 rounded-full ${
+                      item.status === 'available' ? 'bg-emerald-50' : 'bg-orange-50'
+                    }`}
+                  >
+                    <Text
+                      className={`text-[10px] font-bold capitalize ${
+                        item.status === 'available' ? 'text-emerald-600' : 'text-orange-500'
+                      }`}
+                    >
+                      {item.status}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+            />
+          )}
+        </View>
+      </ScrollView>
+
+      <BottomTabBar activeTab="home" />
     </View>
   );
 }

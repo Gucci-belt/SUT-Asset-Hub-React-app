@@ -5,49 +5,35 @@ const prisma = new PrismaClient();
 
 async function main() {
     console.log('🌱 Starting database seeding...');
+    const hashedPW = await bcrypt.hash('123456', 10);
 
-    // 1. Create/Update Mock Admin
-    const adminPassword = await bcrypt.hash('1234', 10);
-    const admin = await prisma.user.upsert({
+    // สร้างหรืออัปเดต Admin
+    await prisma.user.upsert({
         where: { studentId: 'admin' },
-        update: {
-            passwordHash: adminPassword,
-            role: 'admin'
-        },
+        update: { passwordHash: hashedPW, role: 'admin' },
         create: {
             studentId: 'admin',
-            passwordHash: adminPassword,
+            passwordHash: hashedPW,
             role: 'admin',
             pin: '1234'
         },
     });
-    console.log(`✅ Admin user ready: ${admin.studentId} (Pass: 1234)`);
 
-    // 2. Create/Update Mock Student
-    const studentPassword = await bcrypt.hash('1234', 10);
-    const student = await prisma.user.upsert({
+    // สร้างหรืออัปเดต Student (B67)
+    await prisma.user.upsert({
         where: { studentId: 'b67' },
-        update: {
-            passwordHash: studentPassword,
-            role: 'student'
-        },
+        update: { passwordHash: hashedPW, role: 'student' },
         create: {
             studentId: 'b67',
-            passwordHash: studentPassword,
+            passwordHash: hashedPW,
             role: 'student',
             pin: '1234'
         },
     });
-    console.log(`✅ Student user ready: ${student.studentId} (Pass: 1234)`);
 
-    console.log('🎉 Seeding finished.');
+    console.log('🎉 Seeding finished successfully!');
 }
 
 main()
-    .catch((e) => {
-        console.error(e);
-        process.exit(1);
-    })
-    .finally(async () => {
-        await prisma.$disconnect();
-    });
+    .catch((e) => { console.error(e); process.exit(1); })
+    .finally(async () => { await prisma.$disconnect(); });

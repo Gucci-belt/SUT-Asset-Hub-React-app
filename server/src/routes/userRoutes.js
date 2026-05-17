@@ -5,6 +5,8 @@ const { authenticateToken, authorizeAdmin } = require('../middleware/authMiddlew
 
 // All routes here require Admin access
 router.get('/', authenticateToken, authorizeAdmin, userController.getAllUsers);
+router.get('/:id', authenticateToken, authorizeAdmin, userController.getUserById);
+router.patch('/:id/role', authenticateToken, authorizeAdmin, userController.updateUserRole);
 router.delete('/:id', authenticateToken, authorizeAdmin, userController.deleteUser);
 
 module.exports = router;

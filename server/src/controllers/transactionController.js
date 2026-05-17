@@ -144,6 +144,54 @@ exports.returnTransaction = async (req, res) => {
     }
 };
 
+// POST /api/transactions/:id/request-return
+exports.requestReturn = async (req, res) => {
+    const { id } = req.params;
+    try {
+        const transaction = await prisma.transaction.findUnique({ where: { id: Number(id) } });
+        if (!transaction) return res.status(404).json({ error: "Transaction not found" });
+        if (transaction.userId !== req.user.id) return res.status(403).json({ error: "Unauthorized" });
+        if (transaction.status !== 'approved') return res.status(400).json({ error: "Transaction is not approved" });
+
+        const updatedTx = await prisma.transaction.update({
+            where: { id: Number(id) },
+            data: { status: 'return_requested' }
+        });
+        res.json({ message: "Return requested", transaction: updatedTx });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
+// POST /api/admin/transactions/:id/confirm-return
+exports.confirmReturn = async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await prisma.$transaction(async (tx) => {
+            const transaction = await tx.transaction.findUnique({ where: { id: Number(id) } });
+            if (!transaction) throw new Error("Transaction not found");
+
+            const updatedTx = await tx.transaction.update({
+                where: { id: Number(id) },
+                data: {
+                    status: 'returned',
+                    returnDate: new Date()
+                }
+            });
+
+            await tx.asset.update({
+                where: { id: transaction.assetId },
+                data: { status: 'available' }
+            });
+
+            return updatedTx;
+        });
+        res.json({ message: "Return confirmed", transaction: result });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
 // GET /api/transactions/my-history
 exports.getMyHistory = async (req, res) => {
     // FIX IDOR: Use ID from Token (req.user.id) instead of Query Param

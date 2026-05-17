@@ -1,46 +1,85 @@
 # Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
 
-# dependencies
+# Environment variables
+.env
+.env.local
+.env.*.local
+.env*.local
+
+# Dependencies
 node_modules/
+
+# Build outputs
+dist/
+build/
+web-build/
+*.tsbuildinfo
+
+# Logs
+*.log
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+lerna-debug.log*
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
 
 # Expo
 .expo/
+.expo-shared/
+expo-env.d.ts
 dist/
 web-build/
-expo-env.d.ts
 
-# Native
+# Mobile build artifacts
+/ios
+/android
+
+# Database
+postgres-data/
+docker-volumes/
+
+# Uploaded assets (generated at runtime)
+server/uploads/
+
+# Certificates and signing keys
 .kotlin/
 *.orig.*
 *.jks
 *.p8
 *.p12
 *.key
+*.pem
 *.mobileprovision
 
 # Metro
 .metro-health-check*
 
-# debug
-npm-debug.*
-yarn-debug.*
-yarn-error.*
-
-# macOS
-.DS_Store
-*.pem
-
-# local env files
-.env*.local
-
-# typescript
-*.tsbuildinfo
-
+# Temporary files
+*.tmp
+*.temp
+*.bak
 app-example
-
-# generated native folders
-/ios
-/android
 
 # AI Assistant & IDE Configs
 .agent/

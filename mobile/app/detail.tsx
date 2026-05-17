@@ -1,110 +1,286 @@
-import React from 'react';
-import { View, Text, Image, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-import CustomButton from '../components/CustomButton';
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View, Text, ScrollView, TouchableOpacity,
+  Image, StatusBar, ActivityIndicator, Alert
+} from 'react-native';
+import { router, useLocalSearchParams } from 'expo-router';
+import Constants from 'expo-constants';
+import { Ionicons } from '@expo/vector-icons';
+import { Calendar } from 'lucide-react-native';
+import { globalAuthToken, setAuthToken } from '../globalAuth';
+import * as SecureStore from 'expo-secure-store';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import BottomTabBar from '../components/BottomTabBar';
 
-// Mock data (Normally this would come from an API based on an ID passed from the Scanner)
-const MOCK_ASSET_DETAIL = {
-  id: '014',
-  name: 'MacBook Air M2',
-  category: 'Laptops',
-  status: 'Available',
-  description: '13.6-inch Liquid Retina display, M2 chip with 8-core CPU and 8-core GPU. Ideal for development and design tasks.',
-  brand: 'Apple',
-  imageUrl: 'https://images.unsplash.com/photo-1611186871348-b1ce696e52c9?q=80&w=600&auto=format&fit=crop',
+// ─── API ──────────────────────────────────────────────────────────────────────
+const debuggerHost = Constants.expoConfig?.hostUri;
+let API_BASE_URL = 'http://10.0.2.2:3000/api';
+if (debuggerHost) {
+  API_BASE_URL = `http://${debuggerHost.split(':')[0]}:3000/api`;
+}
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+type AssetStatus = 'available' | 'borrowed' | 'maintenance';
+
+interface Asset {
+  id: number;
+  name: string;
+  serialNumber: string;
+  category: string;
+  description?: string;
+  status: AssetStatus;
+  imagePath?: string;
+}
+
+// ─── Status config ─────────────────────────────────────────────────────────────
+const STATUS_CONFIG: Record<AssetStatus, { label: string; bg: string; text: string }> = {
+  available:   { label: 'Available',   bg: '#e6f4ea', text: '#008a2e' },
+  borrowed:    { label: 'Borrowed',    bg: '#fff3e0', text: '#e67c00' },
+  maintenance: { label: 'Maintenance', bg: '#ffdad6', text: '#ba1a1a' },
 };
 
-export default function AssetDetailScreen() {
-  const router = useRouter();
-  const asset = MOCK_ASSET_DETAIL; // Replace with fetched data later
-  const isAvailable = asset.status === 'Available';
+const BORROW_LABEL: Record<AssetStatus, string> = {
+  available:   'Borrow Now',
+  borrowed:    'Currently Unavailable',
+  maintenance: 'Under Maintenance',
+};
 
-  const handleBorrowNow = () => {
-    alert(`Successfully borrowed ${asset.name}!`);
-    router.replace('/home'); // Go back to home after borrowing
-  };
+// ─── Sub-components ───────────────────────────────────────────────────────────
+const InfoRow: React.FC<{ label: string; value: string }> = ({ label, value }) => (
+  <View className="flex-1 bg-slate-50 rounded-xl p-3 mx-1">
+    <Text className="text-xs text-slate-400 uppercase tracking-wide mb-1">{label}</Text>
+    <Text className="text-sm font-semibold text-slate-800">{value}</Text>
+  </View>
+);
+
+// ─── Main Screen ──────────────────────────────────────────────────────────────
+export default function AssetDetailScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+
+  const [asset, setAsset] = useState<Asset | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [dueDate, setDueDate] = useState<Date>(
+    new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+  );
+
+  const getToken = useCallback(async (): Promise<string | null> => {
+    if (globalAuthToken) return globalAuthToken;
+    try {
+      const stored = await SecureStore.getItemAsync('token');
+      if (stored) setAuthToken(stored);
+      return stored;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const fetchAsset = useCallback(async () => {
+    if (!id) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const token = await getToken();
+      const res = await fetch(`${API_BASE_URL}/assets/${id}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) throw new Error(`Server error: ${res.status}`);
+      const data: Asset = await res.json();
+      setAsset(data);
+    } catch {
+      setError('Failed to load asset. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [id, getToken]);
+
+  useEffect(() => {
+    fetchAsset();
+  }, [fetchAsset]);
+
+  const imageUri = asset?.imagePath
+    ? `${API_BASE_URL.replace('/api', '')}${asset.imagePath}`
+    : null;
+
+  const statusCfg = asset ? STATUS_CONFIG[asset.status] : null;
+
+  if (isLoading) return (
+    <View className="flex-1 items-center justify-center bg-white">
+      <ActivityIndicator size="large" color="#2563EB" />
+    </View>
+  );
+
+  if (error) return (
+    <View className="flex-1 items-center justify-center bg-white">
+      <Text className="text-red-500">{error}</Text>
+      <TouchableOpacity onPress={fetchAsset} className="mt-4">
+        <Text className="text-blue-600 font-semibold">Retry</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  if (!asset) return null;
 
   return (
-    <View className="flex-1 bg-white">
-      {/* Header overlaid on image */}
-      <View className="absolute top-12 w-full px-4 z-10 flex-row justify-between items-center">
-        <TouchableOpacity 
-          className="w-10 h-10 rounded-full bg-black/30 items-center justify-center"
-          onPress={() => router.back()}
-        >
-          <Text className="text-white font-bold text-lg">{'<'}</Text>
-        </TouchableOpacity>
-        <Text className="text-white font-semibold text-lg drop-shadow-md">Asset Details</Text>
-        <View className="w-10 h-10" /> {/* Spacer */}
+    <View className="flex-1">
+      <View className="flex-1 bg-white">
+        <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
+
+          <>
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: 80 }}
+            >
+              {/* ── Hero Image ── */}
+              <View className="w-full bg-slate-100 relative" style={{ height: 280 }}>
+                {imageUri ? (
+                  <Image
+                    source={{ uri: imageUri }}
+                    className="w-full h-full"
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View className="flex-1 items-center justify-center">
+                    <Ionicons name="cube-outline" size={64} color="#CBD5E1" />
+                  </View>
+                )}
+
+                {/* Dark Gradient Overlay */}
+                <View 
+                  className="absolute bottom-0 left-0 right-0 h-32" 
+                  style={{ backgroundImage: 'linear-gradient(to bottom, transparent, rgba(0,0,0,0.4))' } as any}
+                />
+
+                {/* Back Button */}
+                <TouchableOpacity
+                  onPress={() => router.back()}
+                  className="absolute top-12 left-4 w-10 h-10 rounded-full bg-white items-center justify-center z-10"
+                  style={{ shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 8, elevation: 4 }}
+                >
+                  <Ionicons name="chevron-back" size={22} color="#0F172A" />
+                </TouchableOpacity>
+
+                {/* Status Badge (Top-Right) */}
+                {statusCfg && (
+                  <View
+                    className="absolute top-12 right-4 px-3 py-1.5"
+                    style={{ backgroundColor: statusCfg.bg, borderRadius: 9999 }}
+                  >
+                    <Text className="text-xs font-bold" style={{ color: statusCfg.text }}>
+                      {statusCfg.label}
+                    </Text>
+                  </View>
+                )}
+
+                {/* Asset Name (Bottom-Left on image) */}
+                <View style={{ position: 'absolute', bottom: 32, left: 20, right: 20 }}>
+                  <Text 
+                    className="text-white text-xl font-bold"
+                    style={{ textShadowColor: 'rgba(0,0,0,0.5)', textShadowRadius: 4, textShadowOffset: { width: 0, height: 1 } }}
+                  >
+                    {asset?.name}
+                  </Text>
+                </View>
+              </View>
+
+              {/* ── Content Panel ── */}
+              <View className="bg-white" style={{ borderTopLeftRadius: 28, borderTopRightRadius: 28, marginTop: -24, paddingTop: 24, paddingHorizontal: 20 }}>
+                {/* Info Grid */}
+                <View className="flex-row mb-6 mx-[-4px]">
+                  <InfoRow label="Category" value={asset?.category as string} />
+                  <InfoRow label="Serial No." value={asset?.serialNumber as string} />
+                </View>
+
+                {/* Description */}
+                {asset?.description ? (
+                  <View className="mb-6">
+                    <Text className="text-sm font-semibold text-slate-400 tracking-wide mb-2">Description</Text>
+                    <Text className="text-base text-slate-700 leading-relaxed capitalize">{asset?.description}</Text>
+                  </View>
+                ) : null}
+
+                {/* Error banner (borrow failure) */}
+                {error && asset && (
+                  <View className="bg-[#ffdad6] rounded-2xl px-4 py-3 flex-row items-center mb-4">
+                    <Ionicons name="alert-circle" size={20} color="#ba1a1a" />
+                    <Text className="text-sm font-bold ml-2" style={{ color: '#ba1a1a' }}>
+                      {error}
+                    </Text>
+                  </View>
+                )}
+
+                {/* ── Borrow CTA ── */}
+                <View className="mt-4 pb-4 bg-white">
+                  {asset?.status === 'available' && (
+                    <>
+                      <View className="mb-4">
+                        <Text className="text-sm font-semibold text-slate-700 mb-2">Return Date</Text>
+                        <TouchableOpacity
+                          onPress={() => setShowDatePicker(true)}
+                          className="flex-row items-center bg-white border border-slate-200 rounded-xl px-4 py-3"
+                        >
+                          <Calendar size={20} color="#2563EB" />
+                          <Text className="text-gray-800 font-medium flex-1 ml-3">
+                            {dueDate.toLocaleDateString('th-TH', { 
+                              day: 'numeric', month: 'long', year: 'numeric' 
+                            })}
+                          </Text>
+                          <Text className="text-blue-600 font-medium">Change</Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      {showDatePicker && (
+                        <DateTimePicker
+                          value={dueDate}
+                          mode="date"
+                          minimumDate={new Date(Date.now() + 24 * 60 * 60 * 1000)} // min: tomorrow
+                          onChange={(event, date) => {
+                            setShowDatePicker(false);
+                            if (date) setDueDate(date);
+                          }}
+                        />
+                      )}
+                    </>
+                  )}
+
+                  <TouchableOpacity
+                    onPress={() => router.push({
+                      pathname: '/student-verify',
+                      params: {
+                        assetId: String(asset.id),
+                        dueDate: dueDate.toISOString(),
+                      }
+                    })}
+                    disabled={asset?.status !== 'available'}
+                    className={`py-4 rounded-2xl items-center ${
+                      asset?.status === 'available'
+                        ? 'bg-[#2563EB]'
+                        : 'bg-slate-200'
+                    }`}
+                    style={
+                      asset?.status === 'available'
+                        ? { shadowColor: '#2563EB', shadowOpacity: 0.35, shadowRadius: 12, elevation: 6 }
+                        : {}
+                    }
+                  >
+                    <Text
+                      className={`text-base font-bold ${
+                        asset?.status === 'available'
+                          ? 'text-white'
+                          : 'text-slate-400'
+                      }`}
+                    >
+                      {asset?.status !== 'available' ? 'Not Available' : 'Borrow Now'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </ScrollView>
+          </>
       </View>
 
-      <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
-        {/* Media Section */}
-        <View className="w-full h-80 bg-slate-100">
-          <Image 
-            source={{ uri: asset.imageUrl }} 
-            className="w-full h-full"
-            resizeMode="cover"
-          />
-        </View>
-
-        {/* Info Panel pulling up over the image */}
-        <View className="bg-white rounded-t-3xl -mt-6 pt-8 px-6 min-h-[500px]">
-          {/* Title & Status */}
-          <View className="flex-row justify-between items-start mb-6">
-            <View className="flex-1 mr-4">
-              <Text className="text-3xl font-bold text-slate-900 mb-1">{asset.name}</Text>
-              <Text className="text-slate-500 font-medium">{asset.category}</Text>
-            </View>
-            <View
-              className={`px-3 py-1.5 rounded-lg ${
-                isAvailable ? 'bg-green-100' : 'bg-red-100'
-              }`}
-            >
-              <Text
-                className={`text-sm font-semibold ${
-                  isAvailable ? 'text-green-700' : 'text-red-700'
-                }`}
-              >
-                {asset.status}
-              </Text>
-            </View>
-          </View>
-
-          {/* Description */}
-          <View className="mb-6">
-            <Text className="text-lg font-semibold text-slate-800 mb-2">Description</Text>
-            <Text className="text-slate-600 leading-relaxed">
-              {asset.description}
-            </Text>
-          </View>
-
-          {/* Specifications Grid */}
-          <Text className="text-lg font-semibold text-slate-800 mb-3">Specifications</Text>
-          <View className="flex-row flex-wrap gap-3 mb-6">
-            <View className="bg-slate-50 border border-slate-200 px-4 py-2 rounded-xl">
-              <Text className="text-slate-500 text-xs mb-1">Asset ID</Text>
-              <Text className="text-slate-800 font-medium">{asset.id}</Text>
-            </View>
-            <View className="bg-slate-50 border border-slate-200 px-4 py-2 rounded-xl">
-              <Text className="text-slate-500 text-xs mb-1">Brand</Text>
-              <Text className="text-slate-800 font-medium">{asset.brand}</Text>
-            </View>
-          </View>
-
-        </View>
-      </ScrollView>
-
-      {/* Fixed Bottom CTA */}
-      {isAvailable && (
-        <View className="absolute bottom-0 w-full bg-white border-t border-slate-100 px-6 py-4 pb-10 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
-          <CustomButton 
-            title="Borrow Now" 
-            onPress={handleBorrowNow}
-          />
-        </View>
-      )}
+      <BottomTabBar activeTab="home" />
     </View>
   );
 }

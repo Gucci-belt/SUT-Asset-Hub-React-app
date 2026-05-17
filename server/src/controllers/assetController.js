@@ -1,10 +1,29 @@
 const prisma = require('../prismaClient');
 
-// GET /api/assets
+// GET /api/assets (supports ?category=Laptops)
 exports.getAllAssets = async (req, res) => {
     try {
-        const assets = await prisma.asset.findMany({ orderBy: { id: 'desc' } });
+        const { category } = req.query;
+        const where = category
+          ? { category: { equals: String(category), mode: 'insensitive' } }
+          : {};
+        const assets = await prisma.asset.findMany({
+            where,
+            orderBy: { id: 'desc' },
+        });
         res.json(assets);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
+// GET /api/assets/:id
+exports.getAssetById = async (req, res) => {
+    const { id } = req.params;
+    try {
+        const asset = await prisma.asset.findUnique({ where: { id: Number(id) } });
+        if (!asset) return res.status(404).json({ error: 'Asset not found' });
+        res.json(asset);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -55,17 +74,20 @@ exports.updateAsset = async (req, res) => {
         const updatedAsset = await prisma.asset.update({
             where: { id: Number(id) },
             data: {
-                name,
-                serialNumber,
-                category,
-                status,
-                imagePath,
-                description
-            }
+                ...(name         !== undefined && { name }),
+                ...(serialNumber !== undefined && { serialNumber }),
+                ...(category     !== undefined && { category }),
+                ...(status       !== undefined && { status }),
+                ...(description  !== undefined && { description }),
+                ...(imagePath    !== undefined && { imagePath }),
+            },
         });
         res.json(updatedAsset);
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        if (err.code === 'P2025') {
+            return res.status(404).json({ error: 'Asset not found' });
+        }
+        res.status(500).json({ error: 'Update failed', detail: err.message });
     }
 };
 
@@ -73,37 +95,57 @@ exports.updateAsset = async (req, res) => {
 exports.deleteAsset = async (req, res) => {
     const { id } = req.params;
     try {
-        // 1. Safety Check: Active Transactions
+        // 1. Block deletion if asset has active transactions
         const activeTransaction = await prisma.transaction.findFirst({
             where: {
                 assetId: Number(id),
-                status: { in: ['pending', 'approved', 'borrowed'] }
-            }
+                status: { in: ['pending', 'approved', 'borrowed'] },
+            },
         });
 
         if (activeTransaction) {
             return res.status(400).json({
-                error: 'Cannot delete asset. It has pending requests or is currently borrowed.'
+                error: 'Cannot delete asset. It has pending requests or is currently borrowed.',
             });
         }
 
-        // 2. Delete Asset
-        // Note: We might want to delete related transactions history first or use cascade delete.
-        // For now, let's delete the asset. If foreign keys exist, we might need to delete history.
-        // Prisma schema usually requires explicit deletion of relations unless Cascade is set.
-        // Let's check schema/setup. If transactions exist (returned/rejected), deleting asset might fail if no Cascade.
-        // Safe bet: Delete transactions first or assume Cascade. 
-        // Let's try to delete transactions first to be clean.
-        await prisma.transaction.deleteMany({
-            where: { assetId: Number(id) }
-        });
+        // 2. Delete history transactions first (FK constraint)
+        await prisma.transaction.deleteMany({ where: { assetId: Number(id) } });
 
-        await prisma.asset.delete({
-            where: { id: Number(id) }
-        });
+        // 3. Delete asset
+        await prisma.asset.delete({ where: { id: Number(id) } });
 
         res.json({ message: 'Asset deleted successfully' });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        if (err.code === 'P2025') {
+            return res.status(404).json({ error: 'Asset not found' });
+        }
+        res.status(500).json({ error: 'Delete failed', detail: err.message });
+    }
+};
+
+// GET /api/assets/stats
+exports.getStats = async (req, res) => {
+    try {
+        const [total, inUse, maintenance, overdue, newLeases] = await Promise.all([
+            prisma.asset.count(),
+            prisma.asset.count({ where: { status: 'borrowed' } }),
+            prisma.asset.count({ where: { status: 'maintenance' } }),
+            prisma.transaction.count({
+                where: {
+                    status: 'approved',
+                    dueDate: { lt: new Date() },
+                },
+            }),
+            prisma.transaction.count({
+                where: {
+                    status: 'pending',
+                    borrowDate: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+                },
+            }),
+        ]);
+        res.json({ total, inUse, maintenance, overdue, newLeases });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to fetch stats', detail: err.message });
     }
 };

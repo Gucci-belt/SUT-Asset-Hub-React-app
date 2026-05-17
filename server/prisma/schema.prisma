@@ -13,8 +13,13 @@ model User {
   passwordHash  String
   role          String        @default("student") // student, admin
   pin           String?       // Recovery PIN for password reset
+  firstName     String?       // First name
+  lastName      String?       // Last name
+  phone         String?       // Phone number
+  lineId        String?       // LINE ID
   transactions  Transaction[]
   createdAt     DateTime      @default(now())
+  photo    String?  // 
 }
 
 model Asset {

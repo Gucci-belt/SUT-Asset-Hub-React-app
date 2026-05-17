@@ -14,14 +14,6 @@ An Engineering Laboratory Equipment Borrowing & Returning System for Computer En
 
 ---
 
-### 📸 Screenshots
-<div align="center">
-  <img src="https://images.unsplash.com/photo-1517694712202-14dd9538aa97?q=80&w=300" width="280" alt="Login & Home" style="border-radius: 12px; margin: 10px;" />
-  <img src="https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?q=80&w=300" width="280" alt="QR Verify" style="border-radius: 12px; margin: 10px;" />
-  <img src="https://images.unsplash.com/photo-1551288049-bebda4e38f71?q=80&w=300" width="280" alt="Admin Dashboard" style="border-radius: 12px; margin: 10px;" />
-</div>
-
----
 
 ## 📝 About The Project (เกี่ยวกับโครงการ)
 
